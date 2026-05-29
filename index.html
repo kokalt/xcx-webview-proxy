@@ -46,6 +46,8 @@
             border-top: 3px solid #07c160;
             border-radius: 50%;
             animation: spin 1s linear infinite;
+            /* 默认隐藏加载动画 */
+            display: none;
         }
 
         @keyframes spin {
@@ -64,7 +66,6 @@
             font-size: 14px;
         }
 
-        /* 新增：URL展示区域样式 */
         .url-box {
             margin-top: 20px;
             max-width: 90%;
@@ -77,7 +78,6 @@
             line-height: 1.5;
         }
 
-        /* 新增：跳转按钮样式 */
         .jump-btn {
             margin-top: 16px;
             padding: 8px 20px;
@@ -149,10 +149,9 @@
 <body>
     <div id="loading">
         <div class="spinner"></div>
-        <p id="loadingText">页面加载中...</p>
-        <!-- 新增 URL 展示 + 跳转按钮 -->
+        <p id="loadingText">点击下方按钮加载页面</p>
         <div class="url-box" id="urlBox"></div>
-        <button class="jump-btn" id="jumpBtn">新标签页打开目标地址</button>
+        <button class="jump-btn" id="loadBtn">加载目标页面</button>
     </div>
 
     <div class="error-container" id="error">
@@ -174,10 +173,11 @@
             const errorTextEl = document.getElementById('errorText');
             const frameEl = document.getElementById('frame');
             const urlBox = document.getElementById('urlBox');
-            const jumpBtn = document.getElementById('jumpBtn');
+            const loadBtn = document.getElementById('loadBtn');
+            const spinner = document.querySelector('.spinner');
 
-            // 全局保存解析后的目标地址
             let currentTargetUrl = '';
+            let isLoaded = false;
 
             function showError(message) {
                 loadingEl.style.display = 'none';
@@ -230,6 +230,40 @@
                 return targetUrl;
             }
 
+            // 点击按钮触发加载
+            function startLoad() {
+                // 显示加载动画和文字
+                spinner.style.display = 'block';
+                loadingTextEl.textContent = '页面加载中...';
+                loadBtn.disabled = true;
+
+                // 赋值iframe地址，开始加载
+                frameEl.src = currentTargetUrl;
+
+                // 加载完成
+                frameEl.onload = function () {
+                    if (!isLoaded) {
+                        isLoaded = true;
+                        console.log('[Proxy] 页面加载完成');
+                        hideLoading();
+                    }
+                };
+
+                // 加载失败
+                frameEl.onerror = function () {
+                    console.error('[Proxy] 页面加载失败');
+                    showError('页面加载失败\n请检查网络连接');
+                };
+
+                // 超时处理
+                setTimeout(() => {
+                    if (!isLoaded) {
+                        console.warn('[Proxy] 加载超时，强制显示');
+                        hideLoading();
+                    }
+                }, CONFIG.timeout);
+            }
+
             function init() {
                 const targetUrl = getTargetUrl();
                 if (!targetUrl) {
@@ -248,40 +282,16 @@
                     return;
                 }
 
-                // 赋值全局地址、展示URL
+                // 仅解析并展示URL，不加载iframe
                 currentTargetUrl = decodedUrl;
                 urlBox.innerText = '目标地址：' + decodedUrl;
-
-                // 绑定跳转按钮：新标签页打开
-                jumpBtn.onclick = function () {
-                    window.open(currentTargetUrl, '_blank');
-                };
-
                 console.log('[Proxy] 目标页面:', decodedUrl);
-                let isLoaded = false;
 
-                frameEl.onload = function () {
-                    if (!isLoaded) {
-                        isLoaded = true;
-                        console.log('[Proxy] 页面加载完成');
-                        hideLoading();
-                    }
-                };
-
-                frameEl.onerror = function () {
-                    console.error('[Proxy] 页面加载失败');
-                    showError('页面加载失败\n请检查网络连接');
-                };
-
-                frameEl.src = decodedUrl;
-
-                setTimeout(() => {
-                    if (!isLoaded) {
-                        console.warn('[Proxy] 加载超时，强制显示');
-                        hideLoading();
-                    }
-                }, CONFIG.timeout);
+                // 绑定点击事件
+                loadBtn.addEventListener('click', startLoad);
             }
+
+            // 初始化：只解析地址、展示内容，不执行加载
             init();
         })();
     </script>
