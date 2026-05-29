@@ -36,6 +36,7 @@
             background: #ffffff;
             z-index: 9999;
             transition: opacity 0.3s ease;
+            padding: 20px;
         }
 
         .spinner {
@@ -61,6 +62,35 @@
             margin-top: 15px;
             color: #999;
             font-size: 14px;
+        }
+
+        /* 新增：URL展示区域样式 */
+        .url-box {
+            margin-top: 20px;
+            max-width: 90%;
+            word-break: break-all;
+            background: #f8f8f8;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            color: #666;
+            line-height: 1.5;
+        }
+
+        /* 新增：跳转按钮样式 */
+        .jump-btn {
+            margin-top: 16px;
+            padding: 8px 20px;
+            background: #07c160;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        .jump-btn:active {
+            opacity: 0.8;
         }
 
         iframe {
@@ -120,13 +150,20 @@
     <div id="loading">
         <div class="spinner"></div>
         <p id="loadingText">页面加载中...</p>
+        <!-- 新增 URL 展示 + 跳转按钮 -->
+        <div class="url-box" id="urlBox"></div>
+        <button class="jump-btn" id="jumpBtn">新标签页打开目标地址</button>
     </div>
+
     <div class="error-container" id="error">
         <div class="icon">⚠️</div>
-        <p id="errorText">页面加载失败</p><button onclick="location.reload()">重新加载</button>
+        <p id="errorText">页面加载失败</p>
+        <button onclick="location.reload()">重新加载</button>
     </div>
+
     <iframe id="frame" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
         allow="fullscreen"></iframe>
+
     <script>
         (function () {
             'use strict';
@@ -136,9 +173,26 @@
             const errorEl = document.getElementById('error');
             const errorTextEl = document.getElementById('errorText');
             const frameEl = document.getElementById('frame');
+            const urlBox = document.getElementById('urlBox');
+            const jumpBtn = document.getElementById('jumpBtn');
 
-            function showError(message) { loadingEl.style.display = 'none'; errorEl.style.display = 'block'; errorTextEl.textContent = message; document.title = '加载失败'; }
-            function hideLoading() { loadingEl.style.opacity = '0'; setTimeout(() => { loadingEl.style.display = 'none'; frameEl.classList.add('loaded'); }, 300); }
+            // 全局保存解析后的目标地址
+            let currentTargetUrl = '';
+
+            function showError(message) {
+                loadingEl.style.display = 'none';
+                errorEl.style.display = 'block';
+                errorTextEl.textContent = message;
+                document.title = '加载失败';
+            }
+
+            function hideLoading() {
+                loadingEl.style.opacity = '0';
+                setTimeout(() => {
+                    loadingEl.style.display = 'none';
+                    frameEl.classList.add('loaded');
+                }, 300);
+            }
 
             function isValidUrl(url) {
                 try {
@@ -158,11 +212,18 @@
                 if (!targetUrl) {
                     const system = urlParams.get('sys');
                     const path = urlParams.get('path') || '/';
-                    const SYSTEM_MAP = { 'crm': 'https://crm.your-company.com', 'erp': 'https://erp.your-company.com', 'oa': 'https://oa.your-company.com', 'report': 'https://report.your-company.com' };
+                    const SYSTEM_MAP = {
+                        'crm': 'https://crm.your-company.com',
+                        'erp': 'https://erp.your-company.com',
+                        'oa': 'https://oa.your-company.com',
+                        'report': 'https://report.your-company.com'
+                    };
                     if (system && SYSTEM_MAP[system]) {
                         targetUrl = SYSTEM_MAP[system] + path;
                         const otherParams = [];
-                        urlParams.forEach((value, key) => { if (key !== 'sys' && key !== 'path') otherParams.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`); });
+                        urlParams.forEach((value, key) => {
+                            if (key !== 'sys' && key !== 'path') otherParams.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
+                        });
                         if (otherParams.length > 0) targetUrl += (path.includes('?') ? '&' : '?') + otherParams.join('&');
                     }
                 }
@@ -171,16 +232,55 @@
 
             function init() {
                 const targetUrl = getTargetUrl();
-                if (!targetUrl) { showError('缺少目标页面参数\n请检查链接是否正确'); return; }
+                if (!targetUrl) {
+                    showError('缺少目标页面参数\n请检查链接是否正确');
+                    return;
+                }
                 let decodedUrl;
-                try { decodedUrl = decodeURIComponent(targetUrl); } catch (e) { decodedUrl = targetUrl; }
-                if (!isValidUrl(decodedUrl)) { showError(CONFIG.enableWhitelist ? '目标地址不在允许列表中\n请联系管理员' : '无效的页面地址'); return; }
+                try {
+                    decodedUrl = decodeURIComponent(targetUrl);
+                } catch (e) {
+                    decodedUrl = targetUrl;
+                }
+
+                if (!isValidUrl(decodedUrl)) {
+                    showError(CONFIG.enableWhitelist ? '目标地址不在允许列表中\n请联系管理员' : '无效的页面地址');
+                    return;
+                }
+
+                // 赋值全局地址、展示URL
+                currentTargetUrl = decodedUrl;
+                urlBox.innerText = '目标地址：' + decodedUrl;
+
+                // 绑定跳转按钮：新标签页打开
+                jumpBtn.onclick = function () {
+                    window.open(currentTargetUrl, '_blank');
+                };
+
                 console.log('[Proxy] 目标页面:', decodedUrl);
                 let isLoaded = false;
-                frameEl.onload = function () { if (!isLoaded) { isLoaded = true; console.log('[Proxy] 页面加载完成'); hideLoading(); } };
-                frameEl.onerror = function () { console.error('[Proxy] 页面加载失败'); showError('页面加载失败\n请检查网络连接'); };
+
+                frameEl.onload = function () {
+                    if (!isLoaded) {
+                        isLoaded = true;
+                        console.log('[Proxy] 页面加载完成');
+                        hideLoading();
+                    }
+                };
+
+                frameEl.onerror = function () {
+                    console.error('[Proxy] 页面加载失败');
+                    showError('页面加载失败\n请检查网络连接');
+                };
+
                 frameEl.src = decodedUrl;
-                setTimeout(() => { if (!isLoaded) { console.warn('[Proxy] 加载超时，强制显示'); hideLoading(); } }, CONFIG.timeout);
+
+                setTimeout(() => {
+                    if (!isLoaded) {
+                        console.warn('[Proxy] 加载超时，强制显示');
+                        hideLoading();
+                    }
+                }, CONFIG.timeout);
             }
             init();
         })();
