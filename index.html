@@ -33,7 +33,7 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            background: #ffffff;
+            background: #fff;
             z-index: 9999;
             transition: opacity 0.3s ease;
             padding: 20px;
@@ -77,6 +77,12 @@
             line-height: 1.5;
         }
 
+        .tip-text {
+            margin-top: 8px;
+            font-size: 12px;
+            color: #f53f3f;
+        }
+
         .jump-btn {
             margin-top: 16px;
             padding: 8px 20px;
@@ -86,6 +92,11 @@
             border-radius: 4px;
             font-size: 14px;
             cursor: pointer;
+        }
+
+        .jump-btn:disabled {
+            background: #b2e2c6;
+            cursor: not-allowed;
         }
 
         .jump-btn:active {
@@ -150,6 +161,7 @@
         <div class="spinner"></div>
         <p id="loadingText">点击下方按钮加载页面</p>
         <div class="url-box" id="urlBox"></div>
+        <div class="tip-text" id="tipText"></div>
         <button class="jump-btn" id="loadBtn">加载目标页面</button>
     </div>
 
@@ -159,7 +171,6 @@
         <button onclick="location.reload()">重新加载</button>
     </div>
 
-    <!-- 初始空白页，禁止自动加载 -->
     <iframe id="frame" src="about:blank"
         sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
         allow="fullscreen"></iframe>
@@ -174,12 +185,14 @@
             const errorTextEl = document.getElementById('errorText');
             const frameEl = document.getElementById('frame');
             const urlBox = document.getElementById('urlBox');
+            const tipText = document.getElementById('tipText');
             const loadBtn = document.getElementById('loadBtn');
             const spinner = document.querySelector('.spinner');
 
             let currentTargetUrl = '';
             let isLoaded = false;
             let isLoading = false;
+            let urlValid = false;
 
             function showError(message) {
                 loadingEl.style.display = 'none';
@@ -196,52 +209,59 @@
                 }, 300);
             }
 
-            // 自动补全协议 + 校验URL
-            function formatAndCheckUrl(url) {
-                let tempUrl = url.trim();
-                // 没有 http/https 自动补上 https
-                if (!/^https?:\/\//i.test(tempUrl)) {
-                    tempUrl = 'https://' + tempUrl;
+            // 补全协议 + 校验链接
+            function formatUrl(raw) {
+                let val = raw.trim();
+                if (!val) return '';
+                // 自动补 https
+                if (!/^https?:\/\//i.test(val)) {
+                    val = 'https://' + val;
                 }
                 try {
-                    const urlObj = new URL(tempUrl);
-                    if (!['http:', 'https:'].includes(urlObj.protocol)) return false;
+                    const u = new URL(val);
+                    if (!['http:', 'https:'].includes(u.protocol)) return '';
+                    // 白名单校验
                     if (CONFIG.enableWhitelist) {
-                        const hostname = urlObj.hostname;
-                        return CONFIG.whitelist.some(domain => hostname === domain || hostname.endsWith('.' + domain));
+                        const host = u.hostname;
+                        const pass = CONFIG.whitelist.some(d => host === d || host.endsWith('.' + d));
+                        if (!pass) return '';
                     }
-                    return tempUrl;
+                    return val;
                 } catch (e) {
-                    return false;
+                    return '';
                 }
             }
 
             function getTargetUrl() {
-                const urlParams = new URLSearchParams(window.location.search);
-                let targetUrl = urlParams.get('url');
-                if (!targetUrl) {
-                    const system = urlParams.get('sys');
-                    const path = urlParams.get('path') || '/';
-                    const SYSTEM_MAP = {
+                const params = new URLSearchParams(window.location.search);
+                let target = params.get('url');
+                if (!target) {
+                    const sys = params.get('sys');
+                    const path = params.get('path') || '/';
+                    const MAP = {
                         'crm': 'https://crm.your-company.com',
                         'erp': 'https://erp.your-company.com',
                         'oa': 'https://oa.your-company.com',
                         'report': 'https://report.your-company.com'
                     };
-                    if (system && SYSTEM_MAP[system]) {
-                        targetUrl = SYSTEM_MAP[system] + path;
-                        const otherParams = [];
-                        urlParams.forEach((value, key) => {
-                            if (key !== 'sys' && key !== 'path') otherParams.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
+                    if (sys && MAP[sys]) {
+                        target = MAP[sys] + path;
+                        const other = [];
+                        params.forEach((v, k) => {
+                            if (k !== 'sys' && k !== 'path') {
+                                other.push(`${encodeURIComponent(k)}=${encodeURIComponent(v)}`);
+                            }
                         });
-                        if (otherParams.length > 0) targetUrl += (path.includes('?') ? '&' : '?') + otherParams.join('&');
+                        if (other.length > 0) {
+                            target += (path.includes('?') ? '&' : '?') + other.join('&');
+                        }
                     }
                 }
-                return targetUrl;
+                return target || '';
             }
 
             function startLoad() {
-                if (isLoading || isLoaded) return;
+                if (isLoading || isLoaded || !urlValid) return;
                 isLoading = true;
 
                 spinner.style.display = 'block';
@@ -270,27 +290,25 @@
 
             function init() {
                 const rawUrl = getTargetUrl();
-                if (!rawUrl) {
-                    showError('缺少目标页面参数，请检查链接是否正确');
-                    return;
-                }
+                // 原样展示传入参数
+                urlBox.innerText = '原始参数：' + rawUrl;
 
-                let decodedUrl;
+                let decoded = rawUrl;
                 try {
-                    decodedUrl = decodeURIComponent(rawUrl);
-                } catch (e) {
-                    decodedUrl = rawUrl;
-                }
+                    decoded = decodeURIComponent(rawUrl);
+                } catch (e) { }
 
-                // 格式化+校验
-                const finalUrl = formatAndCheckUrl(decodedUrl);
+                const finalUrl = formatUrl(decoded);
                 if (!finalUrl) {
-                    showError('无效的页面地址');
+                    tipText.innerText = '⚠️ 该地址无法正常访问';
+                    loadBtn.disabled = true;
+                    urlValid = false;
                     return;
                 }
 
+                urlValid = true;
                 currentTargetUrl = finalUrl;
-                urlBox.innerText = '目标地址：' + currentTargetUrl;
+                tipText.innerText = '✅ 已自动补全协议：' + finalUrl;
                 loadBtn.addEventListener('click', startLoad);
             }
 
