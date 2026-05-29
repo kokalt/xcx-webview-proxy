@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>页面加载中...</title>
+    <style>
+        /* 重置样式 */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #f5f5f5;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+        }
+
+        /* 加载动画容器 */
+        #loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: #ffffff;
+            z-index: 9999;
+            transition: opacity 0.3s ease;
+        }
+
+        /* 旋转动画 */
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #07c160;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        #loading p {
+            margin-top: 15px;
+            color: #999;
+            font-size: 14px;
+        }
+
+        /* iframe 样式 */
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            display: block;
+        }
+
+        iframe.loaded {
+            opacity: 1;
+        }
+
+        /* 错误提示 */
+        .error-container {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: #666;
+            display: none;
+            padding: 20px;
+            max-width: 80%;
+        }
+
+        .error-container .icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+
+        .error-container p {
+            font-size: 16px;
+            line-height: 1.5;
+            margin-bottom: 20px;
+        }
+
+        .error-container button {
+            padding: 12px 32px;
+            background: #07c160;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            outline: none;
+        }
+
+        .error-container button:active {
+            opacity: 0.8;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- 加载动画 -->
+    <div id="loading">
+        <div class="spinner"></div>
+        <p id="loadingText">页面加载中...</p>
+    </div>
+
+    <!-- 错误提示 -->
+    <div class="error-container" id="error">
+        <div class="icon">⚠️</div>
+        <p id="errorText">页面加载失败</p>
+        <button onclick="location.reload()">重新加载</button>
+    </div>
+
+    <!-- iframe 容器 -->
+    <iframe id="frame" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+        allow="fullscreen"></iframe>
+
+    <script>
+        (function () {
+            'use strict';
+
+            // 配置项
+            const CONFIG = {
+                // 是否启用域名白名单（生产环境建议开启）
+                enableWhitelist: false,
+                // 允许的域名列表
+                whitelist: [
+                    'your-company.com',
+                    'partner-system.com'
+                ],
+                // 加载超时时间（毫秒）
+                timeout: 10000,
+                // 默认标题
+                defaultTitle: '页面加载中...'
+            };
+
+            // DOM 元素
+            const loadingEl = document.getElementById('loading');
+            const loadingTextEl = document.getElementById('loadingText');
+            const errorEl = document.getElementById('error');
+            const errorTextEl = document.getElementById('errorText');
+            const frameEl = document.getElementById('frame');
+
+            /**
+             * 显示错误信息
+             * @param {string} message - 错误信息
+             */
+            function showError(message) {
+                loadingEl.style.display = 'none';
+                errorEl.style.display = 'block';
+                errorTextEl.textContent = message;
+                document.title = '加载失败';
+            }
+
+            /**
+             * 隐藏加载动画，显示 iframe
+             */
+            function hideLoading() {
+                loadingEl.style.opacity = '0';
+                setTimeout(() => {
+                    loadingEl.style.display = 'none';
+                    frameEl.classList.add('loaded');
+                }, 300);
+            }
+
+            /**
+             * 验证 URL 是否合法
+             * @param {string} url - 待验证的 URL
+             * @returns {boolean}
+             */
+            function isValidUrl(url) {
+                try {
+                    const urlObj = new URL(url);
+                    // 只允许 http 和 https 协议
+                    if (!['http:', 'https:'].includes(urlObj.protocol)) {
+                        return false;
+                    }
+                    // 如果启用白名单，检查域名
+                    if (CONFIG.enableWhitelist) {
+                        const hostname = urlObj.hostname;
+                        const isAllowed = CONFIG.whitelist.some(domain =>
+                            hostname === domain || hostname.endsWith('.' + domain)
+                        );
+                        return isAllowed;
+                    }
+                    return true;
+                } catch (e) {
+                    return false;
+                }
+            }
+
+            /**
+             * 获取目标 URL
+             * @returns {string|null}
+             */
+            function getTargetUrl() {
+                const urlParams = new URLSearchParams(window.location.search);
+
+                // 方式1：直接传递完整 URL（推荐）
+                let targetUrl = urlParams.get('url');
+
+                // 方式2：通过系统标识 + 路径（可选）
+                if (!targetUrl) {
+                    const system = urlParams.get('sys');
+                    const path = urlParams.get('path') || '/';
+
+                    // 系统映射配置
+                    const SYSTEM_MAP = {
+                        'crm': 'https://crm.your-company.com',
+                        'erp': 'https://erp.your-company.com',
+                        'oa': 'https://oa.your-company.com',
+                        'report': 'https://report.your-company.com'
+                    };
+
+                    if (system && SYSTEM_MAP[system]) {
+                        targetUrl = SYSTEM_MAP[system] + path;
+
+                        // 附加其他参数
+                        const otherParams = [];
+                        urlParams.forEach((value, key) => {
+                            if (key !== 'sys' && key !== 'path') {
+                                otherParams.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
+                            }
+                        });
+
+                        if (otherParams.length > 0) {
+                            targetUrl += (path.includes('?') ? '&' : '?') + otherParams.join('&');
+                        }
+                    }
+                }
+
+                return targetUrl;
+            }
+
+            /**
+             * 初始化加载
+             */
+            function init() {
+                // 获取目标 URL
+                const targetUrl = getTargetUrl();
+
+                // 验证参数
+                if (!targetUrl) {
+                    showError('缺少目标页面参数\n请检查链接是否正确');
+                    return;
+                }
+
+                // 解码 URL
+                let decodedUrl;
+                try {
+                    decodedUrl = decodeURIComponent(targetUrl);
+                } catch (e) {
+                    decodedUrl = targetUrl;
+                }
+
+                // 验证 URL 格式
+                if (!isValidUrl(decodedUrl)) {
+                    showError(CONFIG.enableWhitelist
+                        ? '目标地址不在允许列表中\n请联系管理员'
+                        : '无效的页面地址');
+                    return;
+                }
+
+                console.log('[Proxy] 目标页面:', decodedUrl);
+
+                // 设置 iframe 加载事件
+                let isLoaded = false;
+
+                frameEl.onload = function () {
+                    if (!isLoaded) {
+                        isLoaded = true;
+                        console.log('[Proxy] 页面加载完成');
+                        hideLoading();
+                    }
+                };
+
+                frameEl.onerror = function () {
+                    console.error('[Proxy] 页面加载失败');
+                    showError('页面加载失败\n请检查网络连接');
+                };
+
+                // 设置 src 开始加载
+                frameEl.src = decodedUrl;
+
+                // 超时处理
+                setTimeout(() => {
+                    if (!isLoaded) {
+                        console.warn('[Proxy] 加载超时，强制显示');
+                        hideLoading();
+                    }
+                }, CONFIG.timeout);
+            }
+
+            // 启动
+            init();
+        })();
+    </script>
+</body>
+
+</html>
