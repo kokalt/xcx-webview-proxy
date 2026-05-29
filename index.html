@@ -46,7 +46,6 @@
             border-top: 3px solid #07c160;
             border-radius: 50%;
             animation: spin 1s linear infinite;
-            /* 默认隐藏加载动画 */
             display: none;
         }
 
@@ -54,7 +53,6 @@
             0% {
                 transform: rotate(0deg);
             }
-
             100% {
                 transform: rotate(360deg);
             }
@@ -160,7 +158,9 @@
         <button onclick="location.reload()">重新加载</button>
     </div>
 
-    <iframe id="frame" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+    <!-- 关键：初始设置为空白页，杜绝自动加载 -->
+    <iframe id="frame" src="about:blank" 
+        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
         allow="fullscreen"></iframe>
 
     <script>
@@ -178,6 +178,8 @@
 
             let currentTargetUrl = '';
             let isLoaded = false;
+            // 新增：加载锁，防止自动/重复加载
+            let isLoading = false;
 
             function showError(message) {
                 loadingEl.style.display = 'none';
@@ -230,32 +232,34 @@
                 return targetUrl;
             }
 
-            // 点击按钮触发加载
+            // 仅点击执行加载
             function startLoad() {
-                // 显示加载动画和文字
+                // 加载锁：正在加载则直接返回
+                if (isLoading || isLoaded) return;
+                isLoading = true;
+
                 spinner.style.display = 'block';
                 loadingTextEl.textContent = '页面加载中...';
                 loadBtn.disabled = true;
 
-                // 赋值iframe地址，开始加载
+                // 手动赋值地址，开始加载
                 frameEl.src = currentTargetUrl;
 
-                // 加载完成
                 frameEl.onload = function () {
                     if (!isLoaded) {
                         isLoaded = true;
+                        isLoading = false;
                         console.log('[Proxy] 页面加载完成');
                         hideLoading();
                     }
                 };
 
-                // 加载失败
                 frameEl.onerror = function () {
+                    isLoading = false;
                     console.error('[Proxy] 页面加载失败');
                     showError('页面加载失败\n请检查网络连接');
                 };
 
-                // 超时处理
                 setTimeout(() => {
                     if (!isLoaded) {
                         console.warn('[Proxy] 加载超时，强制显示');
@@ -282,16 +286,15 @@
                     return;
                 }
 
-                // 仅解析并展示URL，不加载iframe
                 currentTargetUrl = decodedUrl;
                 urlBox.innerText = '目标地址：' + decodedUrl;
                 console.log('[Proxy] 目标页面:', decodedUrl);
 
                 // 绑定点击事件
-                loadBtn.addEventListener('click', startLoad);
+                loadBtn.onclick = startLoad;
             }
 
-            // 初始化：只解析地址、展示内容，不执行加载
+            // 初始化：只解析URL，绝不加载目标页面
             init();
         })();
     </script>
