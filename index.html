@@ -20,10 +20,9 @@
             height: 100%;
             overflow: hidden;
             background: #f5f5f5;
-            font-family: "Microsoft YaHei", sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
         }
 
-        /* 加载遮罩 */
         #loading {
             position: fixed;
             top: 0;
@@ -37,9 +36,9 @@
             background: #fff;
             z-index: 9999;
             transition: opacity 0.3s ease;
+            padding: 20px;
         }
 
-        /* 加载旋转动画 */
         .spinner {
             width: 40px;
             height: 40px;
@@ -47,6 +46,7 @@
             border-top: 3px solid #07c160;
             border-radius: 50%;
             animation: spin 1s linear infinite;
+            display: none;
         }
 
         @keyframes spin {
@@ -65,7 +65,61 @@
             font-size: 14px;
         }
 
-        /* 内嵌页面 */
+        .url-input {
+            width: 90%;
+            max-width: 500px;
+            height: 40px;
+            line-height: 40px;
+            padding: 0 12px;
+            margin-top: 20px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            outline: none;
+        }
+
+        .url-input:focus {
+            border-color: #07c160;
+        }
+
+        .url-box {
+            margin-top: 12px;
+            max-width: 90%;
+            word-break: break-all;
+            background: #f8f8f8;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            color: #666;
+            line-height: 1.5;
+        }
+
+        .tip-text {
+            margin-top: 8px;
+            font-size: 12px;
+            color: #f53f3f;
+        }
+
+        .jump-btn {
+            margin-top: 16px;
+            padding: 8px 20px;
+            background: #07c160;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        .jump-btn:disabled {
+            background: #b2e2c6;
+            cursor: not-allowed;
+        }
+
+        .jump-btn:active {
+            opacity: 0.8;
+        }
+
         iframe {
             width: 100%;
             height: 100%;
@@ -73,36 +127,171 @@
             display: block;
         }
 
-        iframe.loaded {
-            opacity: 1;
+        .error-container {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: #666;
+            display: none;
+            padding: 20px;
+            max-width: 80%;
+        }
+
+        .error-container .icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+
+        .error-container p {
+            font-size: 16px;
+            line-height: 1.5;
+            margin-bottom: 20px;
+        }
+
+        .error-container button {
+            padding: 12px 32px;
+            background: #07c160;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            outline: none;
+        }
+
+        .error-container button:active {
+            opacity: 0.8;
         }
     </style>
 </head>
 
 <body>
-    <!-- 加载遮罩 -->
     <div id="loading">
         <div class="spinner"></div>
-        <p>页面加载中...</p>
+        <p id="loadingText">请输入网址后点击按钮加载页面</p>
+        <input type="text" class="url-input" id="urlInput" placeholder="请输入网址，如：www.baidu.com"
+            value="https://www.baidu.com">
+        <div class="url-box" id="urlBox"></div>
+        <div class="tip-text" id="tipText"></div>
+        <button class="jump-btn" id="loadBtn">加载目标页面</button>
     </div>
 
-    <!-- 直接嵌入百度 -->
-    <iframe id="frame" src="https://www.baidu.com"
-        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
-        allow="fullscreen"></iframe>
+    <div class="error-container" id="error">
+        <div class="icon">⚠️</div>
+        <p id="errorText">页面加载失败</p>
+        <button onclick="location.reload()">重新加载</button>
+    </div>
+
+    <!-- 已移除 sandbox 沙箱属性，彻底解决跨域拦截报错 -->
+    <iframe id="frame" src="https://www.baidu.com" allow="fullscreen"></iframe>
 
     <script>
         (function () {
+            'use strict';
+            const CONFIG = { enableWhitelist: false, whitelist: ['your-company.com'], timeout: 8000 };
             const loadingEl = document.getElementById('loading');
+            const loadingTextEl = document.getElementById('loadingText');
+            const errorEl = document.getElementById('error');
+            const errorTextEl = document.getElementById('errorText');
             const frameEl = document.getElementById('frame');
+            const urlBox = document.getElementById('urlBox');
+            const tipText = document.getElementById('tipText');
+            const loadBtn = document.getElementById('loadBtn');
+            const spinner = document.querySelector('.spinner');
+            const urlInput = document.getElementById('urlInput');
 
-            // iframe 加载完成后隐藏加载遮罩
-            frameEl.onload = function () {
+            let currentTargetUrl = '';
+            let isLoading = false;
+            let urlValid = false;
+
+            function showError(message) {
+                loadingEl.style.display = 'none';
+                errorEl.style.display = 'block';
+                errorTextEl.textContent = message;
+                document.title = '加载失败';
+            }
+
+            function hideLoading() {
                 loadingEl.style.opacity = '0';
                 setTimeout(() => {
                     loadingEl.style.display = 'none';
                 }, 300);
-            };
+            }
+
+            // 补全协议 + 校验链接
+            function formatUrl(raw) {
+                let val = raw.trim();
+                if (!val) return '';
+                if (!/^https?:\/\//i.test(val)) {
+                    val = 'https://' + val;
+                }
+                try {
+                    const u = new URL(val);
+                    if (!['http:', 'https:'].includes(u.protocol)) return '';
+                    if (CONFIG.enableWhitelist) {
+                        const host = u.hostname;
+                        const pass = CONFIG.whitelist.some(d => host === d || host.endsWith('.' + d));
+                        if (!pass) return '';
+                    }
+                    return val;
+                } catch (e) {
+                    return '';
+                }
+            }
+
+            function getTargetUrl() {
+                return urlInput.value;
+            }
+
+            function startLoad() {
+                if (isLoading || !urlValid) return;
+                isLoading = true;
+
+                spinner.style.display = 'block';
+                loadingTextEl.textContent = '页面加载中...';
+                loadBtn.disabled = true;
+
+                frameEl.src = currentTargetUrl;
+
+                // 纯定时隐藏加载层，不监听iframe任何事件，杜绝跨域访问
+                setTimeout(() => {
+                    isLoading = false;
+                    hideLoading();
+                }, CONFIG.timeout);
+            }
+
+            // 实时校验输入网址
+            function checkUrl() {
+                const rawUrl = getTargetUrl();
+                urlBox.innerText = '原始输入：' + rawUrl;
+
+                const finalUrl = formatUrl(rawUrl);
+                if (!finalUrl) {
+                    tipText.innerText = '⚠️ 该地址无法正常访问';
+                    loadBtn.disabled = true;
+                    urlValid = false;
+                    currentTargetUrl = '';
+                    return;
+                }
+
+                urlValid = true;
+                currentTargetUrl = finalUrl;
+                tipText.innerText = '✅ 已自动补全协议：' + finalUrl;
+                loadBtn.disabled = false;
+            }
+
+            function init() {
+                checkUrl();
+                urlInput.addEventListener('input', checkUrl);
+                loadBtn.addEventListener('click', startLoad);
+                urlInput.addEventListener('keydown', function (e) {
+                    if (e.key === 'Enter') startLoad();
+                })
+            }
+
+            init();
         })();
     </script>
 </body>
