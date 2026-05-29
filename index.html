@@ -46,7 +46,6 @@
             border-top: 3px solid #07c160;
             border-radius: 50%;
             animation: spin 1s linear infinite;
-            /* 默认隐藏加载动画 */
             display: none;
         }
 
@@ -160,13 +159,15 @@
         <button onclick="location.reload()">重新加载</button>
     </div>
 
-    <iframe id="frame" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+    <!-- 初始空白页，禁止自动加载 -->
+    <iframe id="frame" src="about:blank"
+        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
         allow="fullscreen"></iframe>
 
     <script>
         (function () {
             'use strict';
-            const CONFIG = { enableWhitelist: false, whitelist: ['your-company.com'], timeout: 10000, defaultTitle: '页面加载中...' };
+            const CONFIG = { enableWhitelist: false, whitelist: ['your-company.com'], timeout: 10000 };
             const loadingEl = document.getElementById('loading');
             const loadingTextEl = document.getElementById('loadingText');
             const errorEl = document.getElementById('error');
@@ -178,6 +179,7 @@
 
             let currentTargetUrl = '';
             let isLoaded = false;
+            let isLoading = false;
 
             function showError(message) {
                 loadingEl.style.display = 'none';
@@ -194,16 +196,24 @@
                 }, 300);
             }
 
-            function isValidUrl(url) {
+            // 自动补全协议 + 校验URL
+            function formatAndCheckUrl(url) {
+                let tempUrl = url.trim();
+                // 没有 http/https 自动补上 https
+                if (!/^https?:\/\//i.test(tempUrl)) {
+                    tempUrl = 'https://' + tempUrl;
+                }
                 try {
-                    const urlObj = new URL(url);
+                    const urlObj = new URL(tempUrl);
                     if (!['http:', 'https:'].includes(urlObj.protocol)) return false;
                     if (CONFIG.enableWhitelist) {
                         const hostname = urlObj.hostname;
                         return CONFIG.whitelist.some(domain => hostname === domain || hostname.endsWith('.' + domain));
                     }
-                    return true;
-                } catch (e) { return false; }
+                    return tempUrl;
+                } catch (e) {
+                    return false;
+                }
             }
 
             function getTargetUrl() {
@@ -230,68 +240,60 @@
                 return targetUrl;
             }
 
-            // 点击按钮触发加载
             function startLoad() {
-                // 显示加载动画和文字
+                if (isLoading || isLoaded) return;
+                isLoading = true;
+
                 spinner.style.display = 'block';
                 loadingTextEl.textContent = '页面加载中...';
                 loadBtn.disabled = true;
 
-                // 赋值iframe地址，开始加载
                 frameEl.src = currentTargetUrl;
 
-                // 加载完成
                 frameEl.onload = function () {
                     if (!isLoaded) {
                         isLoaded = true;
-                        console.log('[Proxy] 页面加载完成');
+                        isLoading = false;
                         hideLoading();
                     }
                 };
 
-                // 加载失败
                 frameEl.onerror = function () {
-                    console.error('[Proxy] 页面加载失败');
-                    showError('页面加载失败\n请检查网络连接');
+                    isLoading = false;
+                    showError('页面加载失败，请检查网络连接');
                 };
 
-                // 超时处理
                 setTimeout(() => {
-                    if (!isLoaded) {
-                        console.warn('[Proxy] 加载超时，强制显示');
-                        hideLoading();
-                    }
+                    if (!isLoaded) hideLoading();
                 }, CONFIG.timeout);
             }
 
             function init() {
-                const targetUrl = getTargetUrl();
-                if (!targetUrl) {
-                    showError('缺少目标页面参数\n请检查链接是否正确');
+                const rawUrl = getTargetUrl();
+                if (!rawUrl) {
+                    showError('缺少目标页面参数，请检查链接是否正确');
                     return;
                 }
+
                 let decodedUrl;
                 try {
-                    decodedUrl = decodeURIComponent(targetUrl);
+                    decodedUrl = decodeURIComponent(rawUrl);
                 } catch (e) {
-                    decodedUrl = targetUrl;
+                    decodedUrl = rawUrl;
                 }
 
-                if (!isValidUrl(decodedUrl)) {
-                    showError(CONFIG.enableWhitelist ? '目标地址不在允许列表中\n请联系管理员' : '无效的页面地址');
+                // 格式化+校验
+                const finalUrl = formatAndCheckUrl(decodedUrl);
+                if (!finalUrl) {
+                    showError('无效的页面地址');
                     return;
                 }
 
-                // 仅解析并展示URL，不加载iframe
-                currentTargetUrl = decodedUrl;
-                urlBox.innerText = '目标地址：' + decodedUrl;
-                console.log('[Proxy] 目标页面:', decodedUrl);
-
-                // 绑定点击事件
+                currentTargetUrl = finalUrl;
+                urlBox.innerText = '目标地址：' + currentTargetUrl;
                 loadBtn.addEventListener('click', startLoad);
             }
 
-            // 初始化：只解析地址、展示内容，不执行加载
             init();
         })();
     </script>
